@@ -1,0 +1,288 @@
+"""
+Inferred schema from HAR requests to https://www.coursera.org/graphql-gateway.
+This is not official Coursera schema; it is partial and observation-based.
+Observed operations: Search, DiscoveryCollections, ConsumerSearchComponents,
+SeoPathConfigurationQuery, MediumIntent.
+Observed mutations: none.
+"""
+
+schema {
+  query: Query
+}
+
+scalar JSON
+
+"""Root query inferred from observed operations."""
+type Query {
+  SearchResult: SearchResultQueries
+  DiscoveryCollections: DiscoveryCollectionsQueries
+  PageConfig: PageConfigQueries
+  Seo: SeoQueries
+  NaptimeQueries: NaptimeQueries
+}
+
+"""From operation Search."""
+type SearchResultQueries {
+  search(requests: [Search_Request!]!): [Search_Result!]!
+}
+
+input Search_Request {
+  entityType: String
+  limit: Int
+  cursor: String
+  query: String
+  facetFilters: [JSON!]
+  facets: [String!]
+  maxValuesPerFacet: Int
+  disableRecommender: Boolean
+  searchContext: JSON
+}
+
+type Search_Result {
+  elements: [Search_Hit!]
+  facets: [Search_Facet!]
+  pagination: Search_Pagination
+  totalPages: Int
+  source: Search_Source
+  autoAppliedFilters: [JSON!]
+  aiSearchMetadata: Search_AiSearchMetadata
+}
+
+type Search_Hit {
+  id: ID
+  name: String
+  score: Float
+  url: String
+  imageUrl: String
+  productType: String
+  productDifficultyLevel: String
+  productDuration: String
+  avgProductRating: Float
+  numProductRatings: Int
+  skills: [String!]
+  partners: [String!]
+  isPartOfCourseraPlus: Boolean
+  isCourseFree: Boolean
+  isCreditEligible: Boolean
+  translatedName: String
+  tagline: String
+}
+
+type Search_Facet {
+  field: String
+  values: [Search_FacetValue!]
+}
+
+type Search_FacetValue {
+  id: ID
+  value: String
+  count: Int
+}
+
+type Search_Pagination {
+  cursor: String
+  totalElements: Int
+}
+
+type Search_Source {
+  indexName: String
+  recommender: Search_Recommender
+}
+
+type Search_Recommender {
+  context: String
+  hash: String
+}
+
+type Search_AiSearchMetadata {
+  isEligibleForAiGeneratedSummary: Boolean
+}
+
+"""From operation DiscoveryCollections."""
+type DiscoveryCollectionsQueries {
+  queryCollections(input: DiscoveryCollections_QueryCollectionsInput!): [DiscoveryCollections_ProductCollection!]!
+}
+
+input DiscoveryCollections_QueryCollectionsInput {
+  contextType: String!
+  contextId: String!
+  passThroughParameters: [DiscoveryCollections_PassThroughParameter!]
+}
+
+input DiscoveryCollections_PassThroughParameter {
+  key: String!
+  value: String!
+}
+
+type DiscoveryCollections_ProductCollection {
+  id: ID
+  label: String
+  linkedCollectionPageMetadata: DiscoveryCollections_LinkedCollectionPageMetadata
+  entities: [DiscoveryCollections_LearningProduct!]
+}
+
+type DiscoveryCollections_LinkedCollectionPageMetadata {
+  url: String
+}
+
+type DiscoveryCollections_LearningProduct {
+  id: ID
+  slug: String
+  name: String
+  url: String
+  partnerIds: [ID!]
+  imageUrl: String
+  partners: [DiscoveryCollections_Partner!]
+  difficultyLevel: String
+  isPartOfCourseraPlus: Boolean
+  isCostFree: Boolean
+  coBrandingEnabled: Boolean
+  courseCount: Int
+  productCard: DiscoveryCollections_ProductCard
+}
+
+type DiscoveryCollections_Partner {
+  id: ID
+  name: String
+  logo: String
+}
+
+type DiscoveryCollections_ProductCard {
+  id: ID
+  url: String
+  metadata: JSON
+}
+
+"""From operation ConsumerSearchComponents."""
+type PageConfigQueries {
+  queryConsumerSearchComponentsPaginated(
+    input: PageConfig_QueryConsumerSearchComponentsInput!
+    limit: Int!
+    cursor: String
+    componentListMetadataHash: String
+  ): PageConfig_ComponentConnection
+}
+
+input PageConfig_QueryConsumerSearchComponentsInput {
+  queryTerm: String!
+}
+
+type PageConfig_ComponentConnection {
+  elements: [PageConfig_Component!]
+  nextCursor: String
+}
+
+type PageConfig_Component {
+  id: ID
+  rankingContext: String
+  recommenderConfigurationHash: String
+  metadata: JSON
+}
+
+"""From operation SeoPathConfigurationQuery."""
+type SeoQueries {
+  seoPathConfigurationQuery(path: String!): Seo_PathConfiguration
+}
+
+type Seo_PathConfiguration {
+  id: ID
+  pageData: Seo_PageData
+  eqpData: Seo_EqpData
+}
+
+type Seo_PageData {
+  id: ID
+  globalFooter: Seo_Footer
+  subfooter: Seo_Footer
+  metaTags: Seo_MetaTags
+  megaMenu: Seo_MegaMenu
+}
+
+type Seo_Footer {
+  categories: [Seo_FooterCategory!]
+}
+
+type Seo_FooterCategory {
+  id: ID
+  header: String
+  links: [Seo_Link!]
+}
+
+type Seo_Link {
+  id: ID
+  href: String
+  label: String
+}
+
+type Seo_MetaTags {
+  canonicalURL: String
+  descriptionTag: String
+  disableCrawlerIndexing: Boolean
+  disableCrawlerFollow: Boolean
+  disableCrawlerAI: Boolean
+  maxImagePreview: String
+  titleTag: String
+  hreflangLinks: [Seo_HreflangLink!]
+}
+
+type Seo_HreflangLink {
+  id: ID
+  href: String
+  hreflang: String
+}
+
+type Seo_MegaMenu {
+  id: ID
+  categories: [Seo_MegaMenuCategory!]
+}
+
+type Seo_MegaMenuCategory {
+  id: ID
+  header: String
+  subcategories: [Seo_MegaMenuSubcategory!]
+}
+
+type Seo_MegaMenuSubcategory {
+  id: ID
+  header: String
+  links: [Seo_Link!]
+}
+
+type Seo_EqpData {
+  id: ID
+  url: String
+  titleTag: String
+  descriptionTag: String
+  filters: [Seo_Filter!]
+  headers: [Seo_Header!]
+}
+
+type Seo_Filter {
+  id: ID
+  field: String
+  value: String
+}
+
+type Seo_Header {
+  id: ID
+  label: String
+  links: [Seo_Link!]
+}
+
+"""From operation MediumIntent."""
+type NaptimeQueries {
+  ExternallyAccessibleNostosV1Resource: ExternallyAccessibleNostosV1Resource
+}
+
+type ExternallyAccessibleNostosV1Resource {
+  getAllProperties(job_name: String!, keys: String!): ExternallyAccessibleNostosV1Connection
+}
+
+type ExternallyAccessibleNostosV1Connection {
+  elements: [ExternallyAccessibleNostosV1Entity!]
+}
+
+type ExternallyAccessibleNostosV1Entity {
+  id: ID
+  content: JSON
+}
