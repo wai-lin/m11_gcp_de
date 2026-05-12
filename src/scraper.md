@@ -4,7 +4,7 @@ You cannot use standard Cloud Functions for this (they lack the browser dependen
 
 ```Bash
 # Install the library and the stealth plugin
-pip install playwright playwright-stealth
+uv add playwright playwright-stealth
 # Install the browser binaries (only for local testing)
 playwright install chromium
 ```
