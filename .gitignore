@@ -12,3 +12,4 @@ wheels/
 # Ignored Folders
 logs/
 tmp/
+.DS_Store
