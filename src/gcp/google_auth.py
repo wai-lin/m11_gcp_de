@@ -33,13 +33,14 @@ def _running_on_cloud_functions() -> bool:
 
 def get_auth():
     service_account_email = "hs2026de@hs2026de.iam.gserviceaccount.com"
+    service_account_email = os.getenv(
+        "SERVICE_ACCOUNT_EMAIL", service_account_email
+    )
 
     if _running_on_cloud_functions():
         creds, project = google.auth.default()
         target_creds = creds
-        print(
-            f"Using default Cloud Functions credentials in project {project}"
-        )
+        print(f"Using default Cloud Functions credentials in project {project}")
     else:
         creds, project, target_creds = impersonated_service_account(
             service_account_email
@@ -48,4 +49,5 @@ def get_auth():
             f"Impersonation configured for {service_account_email} in project {project}"
         )
 
-    return service_account_email, creds, project, target_creds
+    # Return the effective credentials and project for use by callers
+    return target_creds, project

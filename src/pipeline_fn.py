@@ -1,3 +1,4 @@
+import os
 import requests
 import pandas as pd
 from google.cloud import bigquery
@@ -70,15 +71,21 @@ def fetch_courses(search_query, limit=50):
 
     resp = requests.post(endpoint, json=payload, headers=headers, timeout=30)
     if resp.status_code >= 400:
-        print('Error response:', resp.text)
+        raise RuntimeError(
+            f'Coursera API error {resp.status_code}: {resp.text}')
 
-    data = resp.json()
-    print('Top-level keys in response:', list(data.keys()))
+    try:
+        data = resp.json()
+    except ValueError as e:
+        raise RuntimeError('Invalid JSON response from Coursera API') from e
 
     if 'errors' in data:
-        print('GraphQL Errors:', data['errors'])
+        raise RuntimeError(f"GraphQL errors: {data['errors']}")
 
-    search_results = data['data']['SearchResult']['search']
+    # defensive access
+    search_results = data.get('data', {}).get('SearchResult', {}).get('search')
+    if search_results is None:
+        raise RuntimeError('Unexpected Coursera response structure')
 
     print(f'Fetched {len(search_results)} results')
     return search_results
@@ -119,26 +126,30 @@ def transform_data(data):
     return df
 
 
-def upload_csv_to_gcs(df):
-    """Save DataFrame to CSV and upload to GCS."""
-    csv_path = 'tmp/courses.csv'
+def upload_csv_to_gcs(df, credentials=None, bucket_name=None, project=None):
+    """Save DataFrame to CSV (in /tmp) and upload to GCS. Accepts credentials."""
+    if bucket_name is None:
+        bucket_name = os.getenv('GCS_BUCKET_NAME', 'iam_pg')
+
+    csv_path = os.path.join('/tmp', 'courses.csv')
     df.to_csv(csv_path, index=False)
     print('Saved CSV to', csv_path)
 
-    bucket_name = 'iam_pg'
-    destination_blob_name = f'coursera_exports/{csv_path}'
+    destination_blob_name = f'coursera_exports/{os.path.basename(csv_path)}'
 
-    # Initialize storage client with impersonated credentials
-    bucket = get_storage_with_bucket(bucket_name)
+    # Initialize storage client with provided credentials
+    _storage_client, bucket = get_storage_with_bucket(
+        bucket_name, credentials=credentials, project=project
+    )
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_filename(csv_path)
     gcs_uri = f'gs://{bucket_name}/{destination_blob_name}'
     print('Uploaded to', gcs_uri)
 
 
-def load_csv_to_bigquery(project, bucket_name, destination_blob_name):
-    """Load CSV from GCS into BigQuery."""
-    bq_client = bigquery.Client(project=project)
+def load_csv_to_bigquery(project, bucket_name, destination_blob_name, credentials=None):
+    """Load CSV from GCS into BigQuery. Accepts credentials."""
+    bq_client = bigquery.Client(project=project, credentials=credentials)
     dataset_id = 'university'
     table_id = 'coursera_courses'
     full_table_id = f'{project}.{dataset_id}.{table_id}'
@@ -157,7 +168,7 @@ def load_csv_to_bigquery(project, bucket_name, destination_blob_name):
     print(f'Starting BigQuery load job for project: {project}...')
     load_job = bq_client.load_table_from_uri(
         gcs_uri, full_table_id, job_config=job_config)
-    load_job.result()
+    load_job.result()  # wait for completion
 
     table = bq_client.get_table(full_table_id)
     print('Loaded', table.num_rows, 'rows into', full_table_id)
