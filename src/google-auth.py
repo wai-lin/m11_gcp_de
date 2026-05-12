@@ -1,3 +1,5 @@
+import os
+
 import google.auth
 from google.auth import impersonated_credentials
 from google.auth.exceptions import DefaultCredentialsError
@@ -21,12 +23,29 @@ def impersonated_service_account(sa_email: str):
     return creds, project, target_creds
 
 
-def impersonate():
+def _running_on_cloud_functions() -> bool:
+    # Cloud Functions environments expose one or more of these variables.
+    return any(
+        os.getenv(var)
+        for var in ("K_SERVICE", "FUNCTION_TARGET", "FUNCTION_NAME")
+    )
+
+
+def get_auth():
     service_account_email = "hs2026de@hs2026de.iam.gserviceaccount.com"
-    print(
-        f"Impersonation configured for {service_account_email} in project {project}"
-    )
-    creds, project, target_creds = impersonated_service_account(
-        service_account_email
-    )
+
+    if _running_on_cloud_functions():
+        creds, project = google.auth.default()
+        target_creds = creds
+        print(
+            f"Using default Cloud Functions credentials in project {project}"
+        )
+    else:
+        creds, project, target_creds = impersonated_service_account(
+            service_account_email
+        )
+        print(
+            f"Impersonation configured for {service_account_email} in project {project}"
+        )
+
     return service_account_email, creds, project, target_creds
