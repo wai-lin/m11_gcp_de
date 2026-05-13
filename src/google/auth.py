@@ -6,6 +6,7 @@ from google.auth.exceptions import DefaultCredentialsError
 
 
 def impersonated_service_account(sa_email: str):
+    """Obtain impersonated credentials for a target service account."""
     try:
         creds, project = google.auth.default()
     except DefaultCredentialsError as exc:
@@ -32,6 +33,10 @@ def _running_on_cloud_functions() -> bool:
 
 
 def get_auth():
+    """
+    Get effective credentials and project for use by callers.
+    If running on Cloud Functions, use default credentials. Otherwise, impersonate the specified service account.
+    """
     service_account_email = "hs2026de@hs2026de.iam.gserviceaccount.com"
 
     if _running_on_cloud_functions():
@@ -48,4 +53,4 @@ def get_auth():
             f"Impersonation configured for {service_account_email} in project {project}"
         )
 
-    return service_account_email, creds, project, target_creds
+    return service_account_email, project, target_creds
