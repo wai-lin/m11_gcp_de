@@ -4,6 +4,9 @@ substitutions:
   _IMAGE: tiktok-scraper
   _JOB_NAME: scrape-tiktok
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
