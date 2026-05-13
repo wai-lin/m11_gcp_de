@@ -7,5 +7,5 @@ def scrape_tiktok():
     posts = get_user_posts(nora)
     print(posts)
     if posts.data:
-        return "Ok"
+        return posts.data
     return "No posts found"
