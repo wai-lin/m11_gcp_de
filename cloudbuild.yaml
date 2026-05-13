@@ -1,0 +1,39 @@
+substitutions:
+  _REGION: asia-southeast1
+  _AR_REPO: tiktok-jobs
+  _IMAGE: tiktok-scraper
+  _JOB_NAME: scrape-tiktok
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:${SHORT_SHA}",
+        "--build-arg",
+        "UV_PYTHON_DOWNLOADS=never",
+        ".",
+      ]
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:${SHORT_SHA}",
+      ]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      [
+        "run",
+        "jobs",
+        "update",
+        "${_JOB_NAME}",
+        "--image",
+        "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:${SHORT_SHA}",
+        "--region",
+        "${_REGION}",
+        "--quiet",
+      ]
