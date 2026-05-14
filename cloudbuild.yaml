@@ -62,21 +62,20 @@ steps:
       - -c
       - |
         set -e
-        SCHEDULE="0 0 * * *"
         CRON_NAME="${_JOB_NAME}-cron"
         URI="https://run.googleapis.com/v1/projects/$PROJECT_ID/locations/${_REGION}/jobs/${_JOB_NAME}:run"
-        gcloud scheduler jobs create http "${CRON_NAME}" \
-          --schedule="${SCHEDULE}" \
+        gcloud scheduler jobs create http "$${CRON_NAME}" \
+          --schedule="0 0 * * *" \
           --time-zone="UTC" \
-          --uri="${URI}" \
+          --uri="$${URI}" \
           --location="${_REGION}" \
           --http-method=POST \
           --oauth-service-account-email="${_SCHED_SA}" \
           --message-body='{}' || \
-        gcloud scheduler jobs update http "${CRON_NAME}" \
-          --schedule="${SCHEDULE}" \
+        gcloud scheduler jobs update http "$${CRON_NAME}" \
+          --schedule="0 0 * * *" \
           --time-zone="UTC" \
-          --uri="${URI}" \
+          --uri="$${URI}" \
           --location="${_REGION}" \
           --http-method=POST \
           --oauth-service-account-email="${_SCHED_SA}" \
