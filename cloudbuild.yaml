@@ -3,6 +3,7 @@ substitutions:
   _AR_REPO: tiktok-jobs
   _IMAGE: tiktok-scraper
   _JOB_NAME: scrape-tiktok
+  _SCHED_SA: hs2026de@hs2026de.iam.gserviceaccount.com
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -40,3 +41,43 @@ steps:
         "${_REGION}",
         "--quiet",
       ]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      [
+        "run",
+        "jobs",
+        "execute",
+        "${_JOB_NAME}",
+        "--region",
+        "${_REGION}",
+        "--wait-for-completion",
+        "--quiet",
+      ]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        SCHEDULE="0 0 * * *"
+        CRON_NAME="${_JOB_NAME}-cron"
+        URI="https://run.googleapis.com/v1/projects/$PROJECT_ID/locations/${_REGION}/jobs/${_JOB_NAME}:run"
+        gcloud scheduler jobs create http "${CRON_NAME}" \
+          --schedule="${SCHEDULE}" \
+          --time-zone="UTC" \
+          --uri="${URI}" \
+          --location="${_REGION}" \
+          --http-method=POST \
+          --oauth-service-account-email="${_SCHED_SA}" \
+          --message-body='{}' || \
+        gcloud scheduler jobs update http "${CRON_NAME}" \
+          --schedule="${SCHEDULE}" \
+          --time-zone="UTC" \
+          --uri="${URI}" \
+          --location="${_REGION}" \
+          --http-method=POST \
+          --oauth-service-account-email="${_SCHED_SA}" \
+          --message-body='{}'
