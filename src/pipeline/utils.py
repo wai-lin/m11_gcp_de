@@ -42,8 +42,10 @@ def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str) -> N
         allow_quoted_newlines=True,
         allow_jagged_rows=False,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-        allow_field_addition=True,
     )
+    job_config.schema_update_options = [
+        bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION
+    ]
     load_job = bq_client.load_table_from_uri(
         gcs_uri, table_id, job_config=job_config)
     load_job.result()
