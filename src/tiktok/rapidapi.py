@@ -10,8 +10,10 @@ from src.tiktok.rapidapi_models import (
 def _rapid_tiktok(path: str, params: dict):
     """Fetch TikTok data using RapidAPI"""
     url = f"https://tiktok-api23.p.rapidapi.com/api/{path}"
+    apikey = os.getenv("RAPIDAPI_KEY")
+    print(f"Making request to {url} with params={params!r}")
     headers = {
-        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
+        "x-rapidapi-key": apikey,
         "x-rapidapi-host": "tiktok-api23.p.rapidapi.com",
         "Content-Type": "application/json"
     }
