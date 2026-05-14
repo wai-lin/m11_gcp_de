@@ -1,4 +1,5 @@
 import csv
+import json
 import os
 from datetime import datetime
 
@@ -45,7 +46,27 @@ def build_staging_dataframes(user_info, posts_list, user_id: str, scraped_at: da
 
 def write_and_upload_csv(df: pd.DataFrame, td: str, filename: str, gcs_bucket: str, gcs_path: str):
     csv_path = os.path.join(td, filename)
-    df.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
+    # Sanitize values to avoid embedded newlines or complex objects breaking CSV columns
+    df_safe = df.copy()
+    df_safe = df_safe.fillna("")
+
+    def _sanitize_cell(val):
+        if isinstance(val, (list, dict)):
+            try:
+                s = json.dumps(val, ensure_ascii=False)
+            except Exception:
+                s = str(val)
+        else:
+            s = str(val)
+        # Replace newlines and carriage returns with spaces
+        s = s.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+        return s
+
+    df_safe = df_safe.astype(object).where(pd.notnull(df_safe), "")
+    for col in df_safe.columns:
+        df_safe[col] = df_safe[col].map(_sanitize_cell)
+
+    df_safe.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC, encoding="utf-8", line_terminator="\n")
     return csv_path, upload_file_to_gcs(gcs_bucket, csv_path, gcs_path)
 
 
