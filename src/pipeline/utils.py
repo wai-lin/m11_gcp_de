@@ -28,7 +28,7 @@ def ensure_bq_dataset(bq_client: bigquery.Client, dataset_id: str) -> None:
         bq_client.get_dataset(dataset_id)
     except Exception:
         dataset = bigquery.Dataset(dataset_id)
-        dataset.location = os.getenv("BQ_LOCATION", "US")
+        dataset.location = os.getenv("BQ_LOCATION", "asia-southeast1")
         bq_client.create_dataset(dataset)
         print(f"Created BigQuery dataset {dataset_id}")
 
