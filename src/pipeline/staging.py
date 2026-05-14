@@ -68,5 +68,5 @@ def load_staging_tables(df_user: pd.DataFrame, df_posts: pd.DataFrame, user_id: 
     print(f"Uploaded user CSV to {user_gs}")
     print(f"Uploaded posts CSV to {posts_gs}")
 
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/users/{user_id}/user_{user_id}_{timestamp}.csv", f"{dataset_id}.staging_users")
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/posts/{user_id}/posts_{user_id}_{timestamp}.csv", f"{dataset_id}.staging_posts")
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/users/{user_id}/user_{user_id}_{timestamp}.csv", f"{dataset_id}.staging_users", df_user)
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/posts/{user_id}/posts_{user_id}_{timestamp}.csv", f"{dataset_id}.staging_posts", df_posts)

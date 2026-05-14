@@ -3,6 +3,7 @@ import re
 import pandas as pd
 
 from google.cloud import bigquery
+from google.api_core.exceptions import NotFound
 from src.google import get_storage_bucket
 
 
@@ -33,16 +34,33 @@ def ensure_bq_dataset(bq_client: bigquery.Client, dataset_id: str) -> None:
         print(f"Created BigQuery dataset {dataset_id}")
 
 
-def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str) -> None:
+def _build_load_schema(bq_client: bigquery.Client, table_id: str, df: pd.DataFrame) -> list[bigquery.SchemaField]:
+    try:
+        table = bq_client.get_table(table_id)
+        schema = list(table.schema)
+        existing_fields = {field.name for field in schema}
+    except NotFound:
+        schema = []
+        existing_fields = set()
+
+    for column in df.columns:
+        if column not in existing_fields:
+            schema.append(bigquery.SchemaField(column, "STRING", mode="NULLABLE"))
+
+    return schema
+
+
+def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str, df: pd.DataFrame) -> None:
     """Load CSV from GCS into BigQuery table."""
     job_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.CSV,
         skip_leading_rows=1,
-        autodetect=True,
+        autodetect=False,
         allow_quoted_newlines=True,
         allow_jagged_rows=False,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
     )
+    job_config.schema = _build_load_schema(bq_client, table_id, df)
     job_config.schema_update_options = [
         bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION
     ]

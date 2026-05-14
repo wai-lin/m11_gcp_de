@@ -169,5 +169,5 @@ def load_prod_tables(channels: pd.DataFrame, posts_enriched: pd.DataFrame, user_
     print(f"Uploaded prod channels CSV to {channels_gs}")
     print(f"Uploaded prod posts CSV to {posts_gs}")
 
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/prod/channels/{user_id}/prod_channels_{user_id}_{timestamp}.csv", f"{dataset_id}.prod_channels")
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/prod/posts/{user_id}/prod_posts_{user_id}_{timestamp}.csv", f"{dataset_id}.prod_posts")
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/prod/channels/{user_id}/prod_channels_{user_id}_{timestamp}.csv", f"{dataset_id}.prod_channels", channels)
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/prod/posts/{user_id}/prod_posts_{user_id}_{timestamp}.csv", f"{dataset_id}.prod_posts", posts_enriched)
