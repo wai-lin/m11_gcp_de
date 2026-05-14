@@ -49,10 +49,10 @@ class ProdPostModel(BaseModel):
     @classmethod
     def from_raw(cls, row: dict[str, Any], followers: int) -> "ProdPostModel":
         description = _pick_first(row, ["desc", "description", "text", "caption"])
-        likes = int(_pick_first(row, ["stats.diggCount", "diggCount", "like_count", "likes"], 0) or 0)
-        comments = int(_pick_first(row, ["stats.commentCount", "commentCount", "comment_count", "comments"], 0) or 0)
-        shares = int(_pick_first(row, ["stats.shareCount", "shareCount", "share_count", "shares"], 0) or 0)
-        views = int(_pick_first(row, ["stats.playCount", "playCount", "view_count", "views"], 0) or 0)
+        likes = int(_pick_first(row, ["statsV2_diggCount", "stats_diggCount", "diggCount", "like_count", "likes"], 0) or 0)
+        comments = int(_pick_first(row, ["stats_commentCount", "commentCount", "comment_count", "comments"], 0) or 0)
+        shares = int(_pick_first(row, ["stats_shareCount", "shareCount", "share_count", "shares"], 0) or 0)
+        views = int(_pick_first(row, ["stats_playCount", "playCount", "view_count", "views"], 0) or 0)
 
         return cls(
             post_id=_pick_first(row, ["id", "postId", "awemeId"]),
@@ -92,7 +92,7 @@ def _infer_followers(df_user: pd.DataFrame) -> int:
         return 1
 
     first_row = df_user.iloc[0].to_dict()
-    for key in ["stats.followerCount", "followerCount", "followers", "follower_count", "stats.followers"]:
+    for key in ["stats_followerCount", "statsV2_followerCount", "followerCount", "followers", "follower_count"]:
         value = first_row.get(key)
         if value:
             return int(value)
@@ -110,7 +110,7 @@ def _build_user_profile(df_user: pd.DataFrame) -> dict[str, Any]:
         "nickname": _pick_first(row, ["nickname", "uniqueId"]),
         "bio_description": _pick_first(row, ["signature", "bioDescription", "bio_description"]),
         "verified": _pick_first(row, ["verified", "isVerified"], None),
-        "follower_count": _pick_first(row, ["stats.followerCount", "followerCount", "followers", "follower_count", "stats.followers"], None),
+        "follower_count": _pick_first(row, ["stats_followerCount", "statsV2_followerCount", "followerCount", "followers", "follower_count"], None),
     }
 
 
