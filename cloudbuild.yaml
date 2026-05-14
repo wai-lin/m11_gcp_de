@@ -52,7 +52,6 @@ steps:
         "${_JOB_NAME}",
         "--region",
         "${_REGION}",
-        "--wait-for-completion",
         "--quiet",
       ]
 
