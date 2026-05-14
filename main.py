@@ -16,7 +16,7 @@ def main():
     gcs_bucket = os.getenv("GCS_BUCKET")
     bq_project = os.getenv("BQ_PROJECT")
     bq_dataset = os.getenv("BQ_DATASET", "tiktok_scraper")
-    
+
     print(f"Starting ETL pipeline for user: {user_id}")
     run_etl(user_id, gcs_bucket, bq_project, bq_dataset)
     print("ETL pipeline completed successfully")

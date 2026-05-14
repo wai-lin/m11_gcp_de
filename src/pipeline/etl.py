@@ -155,15 +155,3 @@ def run_etl(
         load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/{posts_path}", posts_table)
 
     print("ETL finished")
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("user_id", help="TikTok uniqueId (username)")
-    parser.add_argument("--gcs-bucket", dest="gcs_bucket", help="GCS bucket name")
-    parser.add_argument("--bq-project", dest="bq_project", help="BigQuery project id")
-    parser.add_argument("--bq-dataset", dest="bq_dataset", default="tiktok_scraper")
-    args = parser.parse_args()
-    run_etl(args.user_id, args.gcs_bucket, args.bq_project, args.bq_dataset)

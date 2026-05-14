@@ -13,7 +13,7 @@ fi
 REGION=${REGION:-asia-southeast1}
 BUCKET=${BUCKET:-hsde_tiktok_scraper}
 BQ_DATASET=${BQ_DATASET:-tiktok_scraper}
-BQ_LOCATION=${BQ_LOCATION:-US}
+BQ_LOCATION=${BQ_LOCATION:-asia-southeast1}
 
 echo "Project: $PROJECT"
 echo "Creating bucket: $BUCKET (region: $REGION) if missing"
