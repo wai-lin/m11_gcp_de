@@ -1,12 +1,20 @@
 import os
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 import tempfile
+import sys
+from pathlib import Path
+
+# Make project root importable when running this file directly.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv
 import pandas as pd
 from google.cloud import storage, bigquery
 
-from src.tiktok.rapidapi import get_user_info, get_user_posts
+from src.tiktok.rapidapi import get_sec_uid, get_user_info, get_user_posts
 
 
 load_dotenv()
@@ -52,6 +60,27 @@ def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str):
     print(f"Loaded {table.num_rows} rows into {table_id}")
 
 
+def sanitize_bq_columns(df: pd.DataFrame) -> pd.DataFrame:
+    renamed = []
+    seen = {}
+    for col in df.columns:
+        clean = re.sub(r"[^A-Za-z0-9_]", "_", str(col))
+        clean = re.sub(r"_+", "_", clean).strip("_")
+        if not clean:
+            clean = "col"
+        if clean[0].isdigit():
+            clean = f"col_{clean}"
+        count = seen.get(clean, 0)
+        seen[clean] = count + 1
+        if count:
+            clean = f"{clean}_{count}"
+        renamed.append(clean)
+
+    df = df.copy()
+    df.columns = renamed
+    return df
+
+
 def run_etl(
     user_id: str,
     gcs_bucket: str = None,
@@ -71,12 +100,13 @@ def run_etl(
         except Exception:
             raise RuntimeError("BigQuery project not configured. Set BQ_PROJECT or run 'gcloud config set project <id>'")
 
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     print(f"Fetching user info for {user_id}")
     user_info = get_user_info(user_id)
+    sec_uid = get_sec_uid(user_id, user_info)
     print(f"Fetching posts for {user_id}")
-    posts = get_user_posts(user_id)
+    posts = get_user_posts(sec_uid)
 
     user_dict = to_dict_safe(user_info)
     posts_list = []
@@ -95,6 +125,8 @@ def run_etl(
     # Build DataFrames
     df_user = pd.json_normalize(user_dict)
     df_posts = pd.json_normalize(posts_list)
+    df_user = sanitize_bq_columns(df_user)
+    df_posts = sanitize_bq_columns(df_posts)
 
     # write csv to temp files
     with tempfile.TemporaryDirectory() as td:
