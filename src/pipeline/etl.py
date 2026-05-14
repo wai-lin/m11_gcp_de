@@ -1,5 +1,6 @@
 import os
 import re
+import csv
 from datetime import datetime, timezone
 import tempfile
 import sys
@@ -54,6 +55,8 @@ def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str) -> N
         source_format=bigquery.SourceFormat.CSV,
         skip_leading_rows=1,
         autodetect=True,
+        allow_quoted_newlines=True,
+        allow_jagged_rows=False,
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
     )
     load_job = bq_client.load_table_from_uri(gcs_uri, table_id, job_config=job_config)
@@ -130,12 +133,13 @@ def run_etl(
     df_user = sanitize_bq_columns(df_user)
     df_posts = sanitize_bq_columns(df_posts)
 
-    # Write and upload CSVs
+    # Write and upload CSVs with proper quoting for BigQuery compatibility
     with tempfile.TemporaryDirectory() as td:
         user_csv = os.path.join(td, f"user_{user_id}_{timestamp}.csv")
         posts_csv = os.path.join(td, f"posts_{user_id}_{timestamp}.csv")
-        df_user.to_csv(user_csv, index=False)
-        df_posts.to_csv(posts_csv, index=False)
+        # Use QUOTE_NONNUMERIC to quote all string fields and handle special characters
+        df_user.to_csv(user_csv, index=False, quoting=csv.QUOTE_NONNUMERIC)
+        df_posts.to_csv(posts_csv, index=False, quoting=csv.QUOTE_NONNUMERIC)
 
         users_path = f"users/{user_id}/{os.path.basename(user_csv)}"
         posts_path = f"posts/{user_id}/{os.path.basename(posts_csv)}"
