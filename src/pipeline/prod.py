@@ -46,17 +46,26 @@ class ProdPostModel(BaseModel):
         comments = int(_pick_first(row, ["stats_commentCount", "commentCount", "comment_count", "comments"], 0) or 0)
         shares = int(_pick_first(row, ["stats_shareCount", "shareCount", "share_count", "shares"], 0) or 0)
         views = int(_pick_first(row, ["stats_playCount", "playCount", "view_count", "views"], 0) or 0)
+        post_id = _pick_first(row, ["id", "postId", "awemeId"])
+        if post_id is not None:
+            post_id = str(post_id)
+
+        channel_id = _pick_first(row, ["channel_id", "uniqueId"])
+        if channel_id is not None:
+            channel_id = str(channel_id)
+
+        scraped_at = _pick_first(row, ["scraped_at"])
 
         return cls(
-            post_id=_pick_first(row, ["id", "postId", "awemeId"]),
-            channel_id=_pick_first(row, ["channel_id", "uniqueId"]),
+            post_id=post_id,
+            channel_id=channel_id,
             created_time=_pick_first(row, ["createTime", "create_time"]),
             description=description,
             likes=likes,
             comments=comments,
             shares=shares,
             views=views,
-            scraped_at=_pick_first(row, ["scraped_at"]),
+            scraped_at=scraped_at,
             hashtags=_extract_hashtags(description),
             engagement=(likes + comments + shares) / max(followers, 1),
         )
