@@ -125,17 +125,52 @@ def _coerce_for_schema(df: pd.DataFrame, schema: list[bigquery.SchemaField]) -> 
             continue
 
         if field.field_type == "BOOL":
-            prepared[field.name] = prepared[field.name].map(lambda value: None if _is_missing(value) else bool(value))
+            def _to_bool(value):
+                if _is_missing(value):
+                    return None
+                if isinstance(value, bool):
+                    return value
+                s = str(value).strip().lower()
+                if s in {"true", "1", "yes", "y", "t"}:
+                    return True
+                if s in {"false", "0", "no", "n", "f"}:
+                    return False
+                return None
+
+            prepared[field.name] = prepared[field.name].map(_to_bool)
         elif field.field_type == "INT64":
-            prepared[field.name] = prepared[field.name].map(lambda value: None if _is_missing(value) else int(value))
+            def _to_int(value):
+                if _is_missing(value):
+                    return None
+                if isinstance(value, int):
+                    return int(value)
+                try:
+                    return int(float(value))
+                except Exception:
+                    return None
+
+            prepared[field.name] = prepared[field.name].map(_to_int)
         elif field.field_type in {"FLOAT64", "NUMERIC", "BIGNUMERIC"}:
-            prepared[field.name] = prepared[field.name].map(lambda value: None if _is_missing(value) else float(value))
+            def _to_float(value):
+                if _is_missing(value):
+                    return None
+                try:
+                    return float(value)
+                except Exception:
+                    return None
+
+            prepared[field.name] = prepared[field.name].map(_to_float)
         elif field.field_type in {"TIMESTAMP", "DATETIME"}:
             prepared[field.name] = prepared[field.name].map(_json_ready_value)
         else:
             prepared[field.name] = prepared[field.name].map(_json_ready_value)
 
     return prepared
+
+
+def coerce_df_to_bq_schema(df: pd.DataFrame, schema: list[bigquery.SchemaField]) -> pd.DataFrame:
+    """Public wrapper for schema-driven dataframe coercion."""
+    return _coerce_for_schema(df, schema)
 
 
 def load_df_to_bq(bq_client: bigquery.Client, df: pd.DataFrame, table_id: str) -> None:

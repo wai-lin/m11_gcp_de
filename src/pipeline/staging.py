@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.tiktok.rapidapi import get_sec_uid, get_user_info, get_user_posts
 
-from .utils import load_csv_to_bq, sanitize_bq_columns, to_dict_safe, upload_file_to_gcs
+from .utils import coerce_df_to_bq_schema, load_csv_to_bq, sanitize_bq_columns, to_dict_safe, upload_file_to_gcs
 
 
 def fetch_tiktok_snapshot(user_id: str):
@@ -54,9 +54,26 @@ def _sanitize_csv_value(value):
     elif pd.isna(value):
         value = ""
     else:
-        value = str(value)
+        # Preserve numeric formatting: convert floats that are whole numbers to ints
+        try:
+            if isinstance(value, float):
+                if value.is_integer():
+                    value = str(int(value))
+                else:
+                    value = repr(value)
+            else:
+                value = str(value)
+        except Exception:
+            value = str(value)
 
     value = value.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    # Convert string '3.0' -> '3' to avoid BigQuery INT parsing issues
+    try:
+        if isinstance(value, str) and re.match(r"^-?\d+\.0+$", value):
+            value = value.split(".")[0]
+    except Exception:
+        pass
+
     return "".join(ch if ch >= " " else " " for ch in value)
 
 
@@ -72,6 +89,21 @@ def _raw_csv_columns(bq_client, table_id: str, df: pd.DataFrame) -> list[str]:
             columns.append(column)
 
     return columns
+
+
+def _raw_csv_schema(bq_client, table_id: str, df: pd.DataFrame):
+    try:
+        table = bq_client.get_table(table_id)
+        schema = list(table.schema)
+    except Exception:
+        schema = []
+
+    if not schema:
+        from google.cloud import bigquery
+
+        schema = [bigquery.SchemaField(column, "STRING", mode="NULLABLE") for column in df.columns]
+
+    return schema
 
 
 def write_and_upload_csv(df: pd.DataFrame, td: str, filename: str, gcs_bucket: str, gcs_path: str, columns: list[str] | None = None):
@@ -96,9 +128,14 @@ def load_staging_tables(df_user: pd.DataFrame, df_posts: pd.DataFrame, user_id: 
 
     user_columns = _raw_csv_columns(bq_client, user_table_id, df_user)
     posts_columns = _raw_csv_columns(bq_client, posts_table_id, df_posts)
+    user_schema = _raw_csv_schema(bq_client, user_table_id, df_user)
+    posts_schema = _raw_csv_schema(bq_client, posts_table_id, df_posts)
+
+    df_user_csv = coerce_df_to_bq_schema(df_user.reindex(columns=user_columns, fill_value=""), user_schema)
+    df_posts_csv = coerce_df_to_bq_schema(df_posts.reindex(columns=posts_columns, fill_value=""), posts_schema)
 
     _, user_gs = write_and_upload_csv(
-        df_user,
+        df_user_csv,
         td,
         f"user_{user_id}_{timestamp}.csv",
         gcs_bucket,
@@ -106,7 +143,7 @@ def load_staging_tables(df_user: pd.DataFrame, df_posts: pd.DataFrame, user_id: 
         user_columns,
     )
     _, posts_gs = write_and_upload_csv(
-        df_posts,
+        df_posts_csv,
         td,
         f"posts_{user_id}_{timestamp}.csv",
         gcs_bucket,
@@ -117,5 +154,5 @@ def load_staging_tables(df_user: pd.DataFrame, df_posts: pd.DataFrame, user_id: 
     print(f"Uploaded user CSV to {user_gs}")
     print(f"Uploaded posts CSV to {posts_gs}")
 
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/users/{user_id}/user_{user_id}_{timestamp}.csv", user_table_id, df_user.reindex(columns=user_columns, fill_value=""))
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/posts/{user_id}/posts_{user_id}_{timestamp}.csv", posts_table_id, df_posts.reindex(columns=posts_columns, fill_value=""))
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/users/{user_id}/user_{user_id}_{timestamp}.csv", user_table_id, df_user_csv)
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/posts/{user_id}/posts_{user_id}_{timestamp}.csv", posts_table_id, df_posts_csv)

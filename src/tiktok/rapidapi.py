@@ -62,11 +62,21 @@ def get_user_info(user_id: str):
     """Get user info"""
     params = {"uniqueId": user_id}
     response = _rapid_tiktok("user/info", params)
-    return RapidApiUserInfoResponse.model_validate(response.json())
+    try:
+        payload = response.json()
+    except (ValueError, requests.exceptions.JSONDecodeError):
+        print(f"RapidAPI returned non-JSON for user/info: body={response.text[:400]!r}")
+        return RapidApiUserInfoResponse.model_validate({})
+    return RapidApiUserInfoResponse.model_validate(payload)
 
 
 def get_user_posts(sec_uid: str, count: int = 35, cursor: int = 0):
     """Get user posts"""
     params = {"secUid": sec_uid, "count": str(count), "cursor": str(cursor)}
     response = _rapid_tiktok("user/posts", params)
-    return RapidApiUserPostsResponse.model_validate(response.json())
+    try:
+        payload = response.json()
+    except (ValueError, requests.exceptions.JSONDecodeError):
+        print(f"RapidAPI returned non-JSON for user/posts: body={response.text[:400]!r}")
+        return RapidApiUserPostsResponse.model_validate({"data": {"itemList": []}})
+    return RapidApiUserPostsResponse.model_validate(payload)
