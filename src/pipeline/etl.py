@@ -5,7 +5,7 @@ import tempfile
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from pathlib import Path
-from .prod import build_prod_frames, load_prod_tables
+from .prod import load_prod_tables_from_staging
 from .staging import (
     build_staging_dataframes,
     extract_posts_list,
@@ -51,14 +51,13 @@ def run_etl(
     bq_dataset: str = "tiktok_scraper",
 ) -> None:
     """
-    Run ETL pipeline: fetch TikTok user data, upload to GCS, load into BigQuery.
+    Run ETL pipeline: fetch TikTok user data, enrich it, and load into BigQuery.
     """
     gcs_bucket = gcs_bucket or os.getenv("GCS_BUCKET", "hsde_tiktok_scraper")
     bq_project = _resolve_bq_project(bq_project)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
     scraped_at = datetime.now(timezone.utc)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     user_info, posts = fetch_tiktok_snapshot(user_id)
     posts_list = extract_posts_list(posts)
     df_user, df_posts = build_staging_dataframes(user_info, posts_list, user_id, scraped_at)
@@ -69,7 +68,6 @@ def run_etl(
         ensure_bq_dataset(bq_client, dataset_id)
 
         load_staging_tables(df_user, df_posts, user_id, gcs_bucket, bq_client, dataset_id, td, timestamp)
-        channels, posts_enriched = build_prod_frames(df_user, df_posts)
-        load_prod_tables(channels, posts_enriched, user_id, gcs_bucket, bq_client, dataset_id, td, timestamp)
+        load_prod_tables_from_staging(bq_client, dataset_id, user_id)
 
     print("ETL finished")

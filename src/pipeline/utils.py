@@ -1,9 +1,13 @@
+import json
 import os
 import re
+from typing import Any
+
 import pandas as pd
 
-from google.cloud import bigquery
 from google.api_core.exceptions import NotFound
+from google.cloud import bigquery
+from pandas.api import types as pdt
 from src.google import get_storage_bucket
 
 
@@ -34,15 +38,79 @@ def ensure_bq_dataset(bq_client: bigquery.Client, dataset_id: str) -> None:
         print(f"Created BigQuery dataset {dataset_id}")
 
 
+def _is_missing(value: Any) -> bool:
+    if value is None or value is pd.NA:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except Exception:
+        return False
+
+
+def _json_ready_value(value: Any) -> Any:
+    if _is_missing(value):
+        return None
+
+    if isinstance(value, (list, dict, tuple, set)):
+        return json.dumps(value, ensure_ascii=False)
+
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime().isoformat()
+
+    if hasattr(value, "isoformat") and not isinstance(value, (str, bytes)):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        try:
+            return value.item()
+        except Exception:
+            pass
+
+    return value
+
+
+def _infer_bq_type(series: pd.Series) -> str:
+    if pdt.is_bool_dtype(series):
+        return "BOOL"
+    if pdt.is_integer_dtype(series):
+        return "INT64"
+    if pdt.is_float_dtype(series):
+        return "FLOAT64"
+    if pdt.is_datetime64_any_dtype(series):
+        return "TIMESTAMP"
+    return "STRING"
+
+
 def _build_load_schema(bq_client: bigquery.Client, table_id: str, df: pd.DataFrame) -> list[bigquery.SchemaField]:
     try:
         table = bq_client.get_table(table_id)
-        schema = list(table.schema)
-        existing_fields = {field.name for field in schema}
+        existing_schema = list(table.schema)
+        existing_fields = {field.name for field in existing_schema}
     except NotFound:
-        schema = []
+        existing_schema = []
         existing_fields = set()
 
+    schema = list(existing_schema)
+    for column in df.columns:
+        if column not in existing_fields:
+            schema.append(bigquery.SchemaField(column, _infer_bq_type(df[column]), mode="NULLABLE"))
+
+    return schema
+
+
+def _build_raw_schema(bq_client: bigquery.Client, table_id: str, df: pd.DataFrame) -> list[bigquery.SchemaField]:
+    try:
+        table = bq_client.get_table(table_id)
+        existing_schema = list(table.schema)
+        existing_fields = {field.name for field in existing_schema}
+    except NotFound:
+        existing_schema = []
+        existing_fields = set()
+
+    schema = list(existing_schema)
     for column in df.columns:
         if column not in existing_fields:
             schema.append(bigquery.SchemaField(column, "STRING", mode="NULLABLE"))
@@ -50,8 +118,51 @@ def _build_load_schema(bq_client: bigquery.Client, table_id: str, df: pd.DataFra
     return schema
 
 
+def _coerce_for_schema(df: pd.DataFrame, schema: list[bigquery.SchemaField]) -> pd.DataFrame:
+    prepared = df.copy()
+    for field in schema:
+        if field.name not in prepared.columns:
+            continue
+
+        if field.field_type == "BOOL":
+            prepared[field.name] = prepared[field.name].map(lambda value: None if _is_missing(value) else bool(value))
+        elif field.field_type == "INT64":
+            prepared[field.name] = prepared[field.name].map(lambda value: None if _is_missing(value) else int(value))
+        elif field.field_type in {"FLOAT64", "NUMERIC", "BIGNUMERIC"}:
+            prepared[field.name] = prepared[field.name].map(lambda value: None if _is_missing(value) else float(value))
+        elif field.field_type in {"TIMESTAMP", "DATETIME"}:
+            prepared[field.name] = prepared[field.name].map(_json_ready_value)
+        else:
+            prepared[field.name] = prepared[field.name].map(_json_ready_value)
+
+    return prepared
+
+
+def load_df_to_bq(bq_client: bigquery.Client, df: pd.DataFrame, table_id: str) -> None:
+    """Load a DataFrame into BigQuery using JSON rows and schema-aware appends."""
+    if df.empty:
+        print(f"No rows to load into {table_id}")
+        return
+
+    schema = _build_load_schema(bq_client, table_id, df)
+    prepared = _coerce_for_schema(df, schema)
+    rows = prepared.to_dict(orient="records")
+
+    job_config = bigquery.LoadJobConfig(
+        schema=schema,
+        autodetect=False,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+    )
+    job_config.schema_update_options = [bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
+
+    load_job = bq_client.load_table_from_json(rows, table_id, job_config=job_config)
+    load_job.result()
+    table = bq_client.get_table(table_id)
+    print(f"Loaded {table.num_rows} rows into {table_id}")
+
+
 def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str, df: pd.DataFrame) -> None:
-    """Load CSV from GCS into BigQuery table."""
+    """Load CSV from GCS into BigQuery as a raw staging table."""
     job_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.CSV,
         skip_leading_rows=1,
@@ -60,12 +171,10 @@ def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str, df: 
         allow_jagged_rows=False,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
     )
-    job_config.schema = _build_load_schema(bq_client, table_id, df)
-    job_config.schema_update_options = [
-        bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION
-    ]
-    load_job = bq_client.load_table_from_uri(
-        gcs_uri, table_id, job_config=job_config)
+    job_config.schema = _build_raw_schema(bq_client, table_id, df)
+    job_config.schema_update_options = [bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
+
+    load_job = bq_client.load_table_from_uri(gcs_uri, table_id, job_config=job_config)
     load_job.result()
     table = bq_client.get_table(table_id)
     print(f"Loaded {table.num_rows} rows into {table_id}")

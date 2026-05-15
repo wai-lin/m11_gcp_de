@@ -5,8 +5,9 @@ from datetime import datetime
 
 import pandas as pd
 
-from .utils import load_csv_to_bq, sanitize_bq_columns, to_dict_safe, upload_file_to_gcs
 from src.tiktok.rapidapi import get_sec_uid, get_user_info, get_user_posts
+
+from .utils import load_csv_to_bq, sanitize_bq_columns, to_dict_safe, upload_file_to_gcs
 
 
 def fetch_tiktok_snapshot(user_id: str):
@@ -44,39 +45,67 @@ def build_staging_dataframes(user_info, posts_list, user_id: str, scraped_at: da
     return df_user, df_posts
 
 
-def write_and_upload_csv(df: pd.DataFrame, td: str, filename: str, gcs_bucket: str, gcs_path: str):
+def _sanitize_csv_value(value):
+    if isinstance(value, (list, dict, tuple, set)):
+        try:
+            value = json.dumps(value, ensure_ascii=False)
+        except Exception:
+            value = str(value)
+    elif pd.isna(value):
+        value = ""
+    else:
+        value = str(value)
+
+    return value.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+
+
+def _raw_csv_columns(bq_client, table_id: str, df: pd.DataFrame) -> list[str]:
+    try:
+        table = bq_client.get_table(table_id)
+        columns = [field.name for field in table.schema]
+    except Exception:
+        columns = []
+
+    for column in df.columns:
+        if column not in columns:
+            columns.append(column)
+
+    return columns
+
+
+def write_and_upload_csv(df: pd.DataFrame, td: str, filename: str, gcs_bucket: str, gcs_path: str, columns: list[str] | None = None):
     csv_path = os.path.join(td, filename)
-    # Sanitize values to avoid embedded newlines or complex objects breaking CSV columns
-    df_safe = df.copy()
-    df_safe = df_safe.fillna("")
-
-    def _sanitize_cell(val):
-        if isinstance(val, (list, dict)):
-            try:
-                s = json.dumps(val, ensure_ascii=False)
-            except Exception:
-                s = str(val)
-        else:
-            s = str(val)
-        # Replace newlines and carriage returns with spaces
-        s = s.replace("\r", " ").replace("\n", " ").replace("\t", " ")
-        return s
-
-    df_safe = df_safe.astype(object).where(pd.notnull(df_safe), "")
+    df_safe = df.copy().astype(object)
+    if columns:
+        df_safe = df_safe.reindex(columns=columns, fill_value="")
     for col in df_safe.columns:
-        df_safe[col] = df_safe[col].map(_sanitize_cell)
+        df_safe[col] = df_safe[col].map(_sanitize_csv_value)
 
-    df_safe.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC, encoding="utf-8", lineterminator="\n")
+    df_safe.to_csv(
+        csv_path,
+        index=False,
+        quoting=csv.QUOTE_ALL,
+        escapechar="\\",
+        encoding="utf-8",
+        lineterminator="\n",
+    )
     return csv_path, upload_file_to_gcs(gcs_bucket, csv_path, gcs_path)
 
 
 def load_staging_tables(df_user: pd.DataFrame, df_posts: pd.DataFrame, user_id: str, gcs_bucket: str, bq_client, dataset_id: str, td: str, timestamp: str):
+    user_table_id = f"{dataset_id}.staging_users"
+    posts_table_id = f"{dataset_id}.staging_posts"
+
+    user_columns = _raw_csv_columns(bq_client, user_table_id, df_user)
+    posts_columns = _raw_csv_columns(bq_client, posts_table_id, df_posts)
+
     _, user_gs = write_and_upload_csv(
         df_user,
         td,
         f"user_{user_id}_{timestamp}.csv",
         gcs_bucket,
         f"users/{user_id}/user_{user_id}_{timestamp}.csv",
+        user_columns,
     )
     _, posts_gs = write_and_upload_csv(
         df_posts,
@@ -84,10 +113,11 @@ def load_staging_tables(df_user: pd.DataFrame, df_posts: pd.DataFrame, user_id: 
         f"posts_{user_id}_{timestamp}.csv",
         gcs_bucket,
         f"posts/{user_id}/posts_{user_id}_{timestamp}.csv",
+        posts_columns,
     )
 
     print(f"Uploaded user CSV to {user_gs}")
     print(f"Uploaded posts CSV to {posts_gs}")
 
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/users/{user_id}/user_{user_id}_{timestamp}.csv", f"{dataset_id}.staging_users", df_user)
-    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/posts/{user_id}/posts_{user_id}_{timestamp}.csv", f"{dataset_id}.staging_posts", df_posts)
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/users/{user_id}/user_{user_id}_{timestamp}.csv", user_table_id, df_user.reindex(columns=user_columns, fill_value=""))
+    load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/posts/{user_id}/posts_{user_id}_{timestamp}.csv", posts_table_id, df_posts.reindex(columns=posts_columns, fill_value=""))
