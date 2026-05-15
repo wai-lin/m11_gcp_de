@@ -56,7 +56,8 @@ def _sanitize_csv_value(value):
     else:
         value = str(value)
 
-    return value.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    value = value.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    return "".join(ch if ch >= " " else " " for ch in value)
 
 
 def _raw_csv_columns(bq_client, table_id: str, df: pd.DataFrame) -> list[str]:
@@ -81,14 +82,11 @@ def write_and_upload_csv(df: pd.DataFrame, td: str, filename: str, gcs_bucket: s
     for col in df_safe.columns:
         df_safe[col] = df_safe[col].map(_sanitize_csv_value)
 
-    df_safe.to_csv(
-        csv_path,
-        index=False,
-        quoting=csv.QUOTE_ALL,
-        escapechar="\\",
-        encoding="utf-8",
-        lineterminator="\n",
-    )
+    with open(csv_path, "w", encoding="utf-8", newline="") as file_handle:
+        writer = csv.writer(file_handle, quoting=csv.QUOTE_ALL, escapechar="\\", lineterminator="\n")
+        writer.writerow(list(df_safe.columns))
+        for row in df_safe.itertuples(index=False, name=None):
+            writer.writerow([_sanitize_csv_value(value) for value in row])
     return csv_path, upload_file_to_gcs(gcs_bucket, csv_path, gcs_path)
 
 
