@@ -66,7 +66,7 @@ def write_and_upload_csv(df: pd.DataFrame, td: str, filename: str, gcs_bucket: s
     for col in df_safe.columns:
         df_safe[col] = df_safe[col].map(_sanitize_cell)
 
-    df_safe.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC, encoding="utf-8", line_terminator="\n")
+    df_safe.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC, encoding="utf-8", lineterminator="\n")
     return csv_path, upload_file_to_gcs(gcs_bucket, csv_path, gcs_path)
 
 
