@@ -97,6 +97,7 @@ steps:
       - |
         EXTRACT_URL=$(gcloud functions describe "${_EXTRACT_FUNCTION}" --gen2 --region="${_REGION}" --format='value(serviceConfig.uri)')
         CRON_NAME="${_EXTRACT_FUNCTION}-cron"
+        # Use OIDC token for calling Cloud Functions (allowed for arbitrary hostnames).
         if gcloud scheduler jobs create http "$${CRON_NAME}" \
           --schedule="0 0 * * *" \
           --time-zone="Asia/Bangkok" \
@@ -104,7 +105,8 @@ steps:
           --uri="$$EXTRACT_URL" \
           --location="${_REGION}" \
           --http-method=POST \
-          --oauth-service-account-email="${_SCHED_SA}" \
+          --oidc-service-account-email="${_SCHED_SA}" \
+          --oidc-token-audience="$$EXTRACT_URL" \
           --message-body='{}'; then
           echo "Created scheduler job $$CRON_NAME"
         else
@@ -115,6 +117,7 @@ steps:
             --uri="$$EXTRACT_URL" \
             --location="${_REGION}" \
             --http-method=POST \
-            --oauth-service-account-email="${_SCHED_SA}" \
+            --oidc-service-account-email="${_SCHED_SA}" \
+            --oidc-token-audience="$$EXTRACT_URL" \
             --message-body='{}'
         fi
