@@ -27,6 +27,13 @@ def upload_file_to_gcs(bucket_name: str, source_file: str, dest_path: str) -> st
     return f"gs://{bucket_name}/{dest_path}"
 
 
+def download_json_from_gcs(bucket_name: str, object_path: str) -> Any:
+    """Download JSON object from GCS and decode it."""
+    _, bucket = get_storage_bucket(bucket_name=bucket_name)
+    blob = bucket.blob(object_path)
+    return json.loads(blob.download_as_text())
+
+
 def ensure_bq_dataset(bq_client: bigquery.Client, dataset_id: str) -> None:
     """Ensure BigQuery dataset exists."""
     try:
@@ -196,8 +203,20 @@ def load_df_to_bq(bq_client: bigquery.Client, df: pd.DataFrame, table_id: str) -
     print(f"Loaded {table.num_rows} rows into {table_id}")
 
 
-def load_csv_to_bq(bq_client: bigquery.Client, gcs_uri: str, table_id: str, df: pd.DataFrame) -> None:
+def load_csv_to_bq(
+    bq_client: bigquery.Client,
+    gcs_uri: str,
+    table_id: str,
+    df: pd.DataFrame | None = None,
+    columns: list[str] | None = None,
+) -> None:
     """Load CSV from GCS into BigQuery as a raw staging table."""
+    if df is None:
+        if columns is None:
+            df = pd.DataFrame()
+        else:
+            df = pd.DataFrame(columns=columns)
+
     job_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.CSV,
         skip_leading_rows=1,

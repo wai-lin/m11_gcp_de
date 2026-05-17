@@ -1,13 +1,14 @@
 from collections import Counter
 from datetime import datetime
 import re
+import os
 from typing import Any
 
 import pandas as pd
 from google.cloud import bigquery
 from pydantic import BaseModel, ConfigDict, Field
 
-from .utils import load_df_to_bq, sanitize_bq_columns
+from .utils import download_json_from_gcs, load_df_to_bq, sanitize_bq_columns
 
 
 def _pick_first(mapping: dict[str, Any], keys: list[str], default: Any = None) -> Any:
@@ -217,3 +218,30 @@ def load_prod_tables_from_staging(bq_client, dataset_id: str, user_id: str):
 
     channels, posts_enriched = build_prod_frames(df_user, df_posts)
     load_prod_tables(channels, posts_enriched, user_id, bq_client, dataset_id)
+
+
+def prod_marker_event(event) -> dict[str, str]:
+    event_data = getattr(event, "data", event) or {}
+    if not isinstance(event_data, dict):
+        raise ValueError("Prod event payload must be a mapping")
+
+    bucket = event_data.get("bucket") or event_data.get("bucket_name")
+    name = event_data.get("name") or event_data.get("object")
+    if not bucket or not name:
+        raise ValueError("Prod event missing bucket or object name")
+
+    marker = download_json_from_gcs(str(bucket), str(name))
+    user_id = str(marker["user_id"])
+
+    bq_project = os.getenv("BQ_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    if not bq_project:
+        raise RuntimeError("BQ_PROJECT or GOOGLE_CLOUD_PROJECT must be set")
+    bq_dataset = str(marker.get("bq_dataset") or os.getenv("BQ_DATASET", "tiktok_scraper"))
+
+    from src.google import get_bigquery_client
+
+    bq_client = get_bigquery_client(project=bq_project)
+    dataset_id = f"{bq_project}.{bq_dataset}"
+    load_prod_tables_from_staging(bq_client, dataset_id, user_id)
+
+    return {"user_id": user_id, "dataset_id": dataset_id}

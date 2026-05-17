@@ -1,44 +1,47 @@
 substitutions:
   _REGION: asia-southeast1
-  _AR_REPO: tiktok-jobs
-  _IMAGE: tiktok-scraper
-  _JOB_NAME: scrape-tiktok
+  _EXTRACT_FUNCTION: scrape-tiktok-extract
+  _STAGE_FUNCTION: scrape-tiktok-stage
+  _PROD_FUNCTION: scrape-tiktok-prod
   _SCHED_SA: hs2026de@hs2026de.iam.gserviceaccount.com
 
 options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  - name: gcr.io/cloud-builders/docker
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
     args:
-      [
-        "build",
-        "-t",
-        "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:${SHORT_SHA}",
-        "--build-arg",
-        "UV_PYTHON_DOWNLOADS=never",
-        ".",
-      ]
+      - -ceu
+      - |
+        RAW_BUCKET="${PROJECT_ID}-tiktok-raw"
+        MANIFEST_BUCKET="${PROJECT_ID}-tiktok-manifest"
+        READY_BUCKET="${PROJECT_ID}-tiktok-ready"
 
-  - name: gcr.io/cloud-builders/docker
-    args:
-      [
-        "push",
-        "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:${SHORT_SHA}",
-      ]
+        for bucket in "$$RAW_BUCKET" "$$MANIFEST_BUCKET" "$$READY_BUCKET"; do
+          if gsutil ls -b "gs://$$bucket" >/dev/null 2>&1; then
+            echo "Bucket gs://$$bucket already exists"
+          else
+            gsutil mb -l "${_REGION}" "gs://$$bucket"
+            echo "Created bucket gs://$$bucket"
+          fi
+        done
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
       [
-        "run",
-        "jobs",
-        "update",
-        "${_JOB_NAME}",
-        "--image",
-        "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:${SHORT_SHA}",
-        "--region",
-        "${_REGION}",
+        "functions",
+        "deploy",
+        "${_EXTRACT_FUNCTION}",
+        "--gen2",
+        "--runtime=python313",
+        "--region=${_REGION}",
+        "--source=.",
+        "--entry-point=extract_request",
+        "--trigger-http",
+        "--allow-unauthenticated",
+        "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=tiktok_scraper,RAW_BUCKET=$PROJECT_ID-tiktok-raw,MANIFEST_BUCKET=$PROJECT_ID-tiktok-manifest,RAW_PREFIX=raw",
         "--quiet",
       ]
 
@@ -46,38 +49,63 @@ steps:
     entrypoint: gcloud
     args:
       [
-        "run",
-        "jobs",
-        "execute",
-        "${_JOB_NAME}",
-        "--region",
-        "${_REGION}",
+        "functions",
+        "deploy",
+        "${_STAGE_FUNCTION}",
+        "--gen2",
+        "--runtime=python313",
+        "--region=${_REGION}",
+        "--source=.",
+        "--entry-point=stage_manifest_event",
+        "--trigger-event-filters=type=google.cloud.storage.object.v1.finalized",
+        "--trigger-event-filters=bucket=$PROJECT_ID-tiktok-manifest",
+        "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=tiktok_scraper,STAGING_MARKER_BUCKET=$PROJECT_ID-tiktok-ready",
+        "--quiet",
+      ]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      [
+        "functions",
+        "deploy",
+        "${_PROD_FUNCTION}",
+        "--gen2",
+        "--runtime=python313",
+        "--region=${_REGION}",
+        "--source=.",
+        "--entry-point=prod_marker_event",
+        "--trigger-event-filters=type=google.cloud.storage.object.v1.finalized",
+        "--trigger-event-filters=bucket=$PROJECT_ID-tiktok-ready",
+        "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=tiktok_scraper",
         "--quiet",
       ]
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
     args:
-      - -c
+      - -ceu
       - |
-        set -e
-        CRON_NAME="${_JOB_NAME}-cron"
-        URI="https://run.googleapis.com/v1/projects/$PROJECT_ID/locations/${_REGION}/jobs/${_JOB_NAME}:run"
-        gcloud scheduler jobs create http "$$ {CRON_NAME}" \
+        EXTRACT_URL=$(gcloud functions describe "${_EXTRACT_FUNCTION}" --gen2 --region="${_REGION}" --format='value(serviceConfig.uri)')
+        CRON_NAME="${_EXTRACT_FUNCTION}-cron"
+        if gcloud scheduler jobs create http "$${CRON_NAME}" \
           --schedule="0 0 * * *" \
           --time-zone="Asia/Bangkok" \
           --max-retry-attempts=0 \
-          --uri="$${URI}" \
+          --uri="$$EXTRACT_URL" \
           --location="${_REGION}" \
           --http-method=POST \
           --oauth-service-account-email="${_SCHED_SA}" \
-          --message-body='{}' || \
-        gcloud scheduler jobs update http "$$ {CRON_NAME}" \
-          --schedule="0 0 * * *" \
-          --time-zone="Asia/Bangkok" \
-          --max-retry-attempts=0 \
-          --uri="$${URI}" \
-          --location="${_REGION}" \
-          --http-method=POST \
-          --oauth-service-account-email="${_SCHED_SA}" \
-          --message-body='{}'
+          --message-body='{}'; then
+          echo "Created scheduler job $$CRON_NAME"
+        else
+          gcloud scheduler jobs update http "$${CRON_NAME}" \
+            --schedule="0 0 * * *" \
+            --time-zone="Asia/Bangkok" \
+            --max-retry-attempts=0 \
+            --uri="$$EXTRACT_URL" \
+            --location="${_REGION}" \
+            --http-method=POST \
+            --oauth-service-account-email="${_SCHED_SA}" \
+            --message-body='{}'
+        fi

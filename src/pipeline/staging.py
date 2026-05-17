@@ -1,13 +1,22 @@
 import csv
 import json
 import os
+import re
+import tempfile
 from datetime import datetime
 
 import pandas as pd
 
 from src.tiktok.rapidapi import get_sec_uid, get_user_info, get_user_posts
 
-from .utils import coerce_df_to_bq_schema, load_csv_to_bq, sanitize_bq_columns, to_dict_safe, upload_file_to_gcs
+from .utils import (
+    coerce_df_to_bq_schema,
+    download_json_from_gcs,
+    load_csv_to_bq,
+    sanitize_bq_columns,
+    to_dict_safe,
+    upload_file_to_gcs,
+)
 
 
 def fetch_tiktok_snapshot(user_id: str):
@@ -156,3 +165,86 @@ def load_staging_tables(df_user: pd.DataFrame, df_posts: pd.DataFrame, user_id: 
 
     load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/users/{user_id}/user_{user_id}_{timestamp}.csv", user_table_id, df_user_csv)
     load_csv_to_bq(bq_client, f"gs://{gcs_bucket}/posts/{user_id}/posts_{user_id}_{timestamp}.csv", posts_table_id, df_posts_csv)
+
+
+def load_staging_tables_from_manifest(manifest: dict[str, object], bq_client, dataset_id: str):
+    user_id = str(manifest["user_id"])
+    user_table_id = f"{dataset_id}.staging_users"
+    posts_table_id = f"{dataset_id}.staging_posts"
+
+    load_csv_to_bq(
+        bq_client,
+        str(manifest["user_csv_uri"]),
+        user_table_id,
+        columns=list(manifest.get("user_columns") or []),
+    )
+    load_csv_to_bq(
+        bq_client,
+        str(manifest["posts_csv_uri"]),
+        posts_table_id,
+        columns=list(manifest.get("posts_columns") or []),
+    )
+
+    print(f"Loaded raw staging tables for {user_id}")
+
+
+def write_staging_complete_marker(
+    user_id: str,
+    gcs_bucket: str,
+    marker_path: str,
+    manifest_uri: str,
+    bq_dataset: str,
+    timestamp: str,
+) -> str:
+    with tempfile.TemporaryDirectory() as td:
+        marker_path_local = os.path.join(td, "staging_complete.json")
+        payload = {
+            "user_id": user_id,
+            "bq_dataset": bq_dataset,
+            "manifest_uri": manifest_uri,
+            "completed_at": timestamp,
+        }
+        with open(marker_path_local, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        return upload_file_to_gcs(gcs_bucket, marker_path_local, marker_path)
+
+
+def stage_manifest_event(event) -> dict[str, str]:
+    event_data = getattr(event, "data", event) or {}
+    if not isinstance(event_data, dict):
+        raise ValueError("Staging event payload must be a mapping")
+
+    bucket = event_data.get("bucket") or event_data.get("bucket_name")
+    name = event_data.get("name") or event_data.get("object")
+    if not bucket or not name:
+        raise ValueError("Staging event missing bucket or object name")
+
+    manifest = download_json_from_gcs(str(bucket), str(name))
+    bq_project = os.getenv("BQ_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    if not bq_project:
+        raise RuntimeError("BQ_PROJECT or GOOGLE_CLOUD_PROJECT must be set")
+    bq_dataset = os.getenv("BQ_DATASET", "tiktok_scraper")
+    dataset_id = f"{bq_project}.{bq_dataset}"
+
+    from src.google import get_bigquery_client
+
+    bq_client = get_bigquery_client(project=bq_project)
+    from .utils import ensure_bq_dataset
+
+    ensure_bq_dataset(bq_client, dataset_id)
+    load_staging_tables_from_manifest(manifest, bq_client, dataset_id)
+
+    marker_bucket = os.getenv("STAGING_MARKER_BUCKET") or str(bucket)
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    marker_path = f"prod-ready/{manifest['user_id']}/{timestamp}.json"
+    marker_uri = write_staging_complete_marker(
+        str(manifest["user_id"]),
+        marker_bucket,
+        marker_path,
+        f"gs://{bucket}/{name}",
+        bq_dataset,
+        timestamp,
+    )
+
+    print(f"Wrote staging marker to {marker_uri}")
+    return {"marker_uri": marker_uri, "user_id": str(manifest["user_id"])}
