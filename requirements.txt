@@ -1,7 +1,39 @@
-fastapi>=0.136.1
-google-auth>=2.51.0
-google-cloud-bigquery>=3.41.0
-google-cloud-storage>=3.10.1
-pandas>=3.0.2
-pydantic>=2.13.4
-requests>=2.33.1
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.13.0
+certifi==2026.4.22
+cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+charset-normalizer==3.4.7
+cryptography==48.0.0
+dotenv==0.9.9
+fastapi==0.136.1
+google-api-core==2.30.3
+google-auth==2.51.0
+google-cloud-bigquery==3.41.0
+google-cloud-core==2.6.0
+google-cloud-storage==3.10.1
+google-crc32c==1.8.0
+google-resumable-media==2.9.0
+googleapis-common-protos==1.75.0
+grpcio==1.80.0
+grpcio-status==1.80.0
+idna==3.13
+numpy==2.4.4
+packaging==26.2
+pandas==3.0.2
+proto-plus==1.28.0
+protobuf==6.33.6
+pyasn1==0.6.3
+pyasn1-modules==0.4.2
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pydantic==2.13.4
+pydantic-core==2.46.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+requests==2.33.1
+six==1.17.0
+starlette==0.52.1
+typing-extensions==4.15.0
+typing-inspection==0.4.2
+tzdata==2026.2 ; sys_platform == 'emscripten' or sys_platform == 'win32'
+urllib3==2.6.3
