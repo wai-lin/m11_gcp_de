@@ -1,9 +1,9 @@
 substitutions:
   _REGION: asia-southeast1
   _DATASET: tiktok_scraper
-  _RAW_BUCKET: $PROJECT_ID-tiktok-raw
-  _MANIFEST_BUCKET: $PROJECT_ID-tiktok-manifest
-  _READY_BUCKET: $PROJECT_ID-tiktok-ready
+  _RAW_BUCKET_SUFFIX: -tiktok-raw
+  _MANIFEST_BUCKET_SUFFIX: -tiktok-manifest
+  _READY_BUCKET_SUFFIX: -tiktok-ready
   _EXTRACT_FUNCTION: scrape-tiktok-extract
   _STAGE_FUNCTION: scrape-tiktok-stage
   _PROD_FUNCTION: scrape-tiktok-prod
@@ -19,7 +19,11 @@ steps:
     args:
       - -ceu
       - |
-        for bucket in "${_RAW_BUCKET}" "${_MANIFEST_BUCKET}" "${_READY_BUCKET}"; do
+        RAW_BUCKET="${PROJECT_ID}${_RAW_BUCKET_SUFFIX}"
+        MANIFEST_BUCKET="${PROJECT_ID}${_MANIFEST_BUCKET_SUFFIX}"
+        READY_BUCKET="${PROJECT_ID}${_READY_BUCKET_SUFFIX}"
+
+        for bucket in "$$RAW_BUCKET" "$$MANIFEST_BUCKET" "$$READY_BUCKET"; do
           if gsutil ls -b "gs://$$bucket" >/dev/null 2>&1; then
             echo "Bucket gs://$$bucket already exists"
           else
@@ -43,7 +47,7 @@ steps:
         "--entry-point=extract_request",
         "--trigger-http",
         "--allow-unauthenticated",
-        "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=${_DATASET},RAW_BUCKET=${_RAW_BUCKET},MANIFEST_BUCKET=${_MANIFEST_BUCKET},RAW_PREFIX=raw",
+        "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=${_DATASET},RAW_BUCKET=$PROJECT_ID${_RAW_BUCKET_SUFFIX},MANIFEST_BUCKET=$PROJECT_ID${_MANIFEST_BUCKET_SUFFIX},RAW_PREFIX=raw",
         "--quiet",
       ]
 
@@ -61,8 +65,8 @@ steps:
         "--source=.",
         "--entry-point=stage_manifest_event",
         "--trigger-event-filters=type=google.cloud.storage.object.v1.finalized",
-        "--trigger-event-filters=bucket=${_MANIFEST_BUCKET}",
-        "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=${_DATASET},STAGING_MARKER_BUCKET=${_READY_BUCKET}",
+        "--trigger-event-filters=bucket=$PROJECT_ID${_MANIFEST_BUCKET_SUFFIX}",
+        "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=${_DATASET},STAGING_MARKER_BUCKET=$PROJECT_ID${_READY_BUCKET_SUFFIX}",
         "--quiet",
       ]
 
@@ -80,7 +84,7 @@ steps:
         "--source=.",
         "--entry-point=prod_marker_event",
         "--trigger-event-filters=type=google.cloud.storage.object.v1.finalized",
-        "--trigger-event-filters=bucket=${_READY_BUCKET}",
+        "--trigger-event-filters=bucket=$PROJECT_ID${_READY_BUCKET_SUFFIX}",
         "--set-env-vars=BQ_PROJECT=$PROJECT_ID,BQ_DATASET=${_DATASET}",
         "--quiet",
       ]
